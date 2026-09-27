@@ -361,17 +361,17 @@ end
 -- Helper Functions --
 --==================--
 
---- Gets the file name from given file extension.
+--- Gets the file extension from given file name or returns fallback text if missing.
 --- @param file_name string The name of a file whose extension will be taken.
---- @return string file_extension Extension of a file.
+--- @return string file_extension Extension of a file or fallback text.
 local function get_file_extension(file_name)
+	if not file_name then return "---" end
 	local extension = file_name:match("^.+%.(.+)$")
 
 	if extension == nil or extension == "" then
-		return "null"
-	else
-		return extension
+		return "---"
 	end
+	return extension
 end
 
 --- Reverse the order of given array
@@ -635,25 +635,23 @@ end
 --- @return string file_extension Current active tab's hovered file's extension.
 function Yatline.string.get:hovered_file_extension(show_icon)
 	local hovered = cx.active.current.hovered
-
-	if hovered then
-		local cha = hovered.cha
-
-		local name
-		if cha.is_dir then
-			name = "dir"
-		else
-			name = get_file_extension(hovered.url.name)
-		end
-
-		if show_icon then
-			local icon = th.icon:match(hovered).text
-			return (icon and icon.text or "") .. " " .. name
-		else
-			return name
-		end
-	else
+	if not hovered then
 		return ""
+	end
+
+	local name
+	if hovered.cha.is_dir then
+		name = "dir"
+	else
+		name = get_file_extension(hovered.name or hovered.url.name)
+	end
+
+	if show_icon then
+		local icon = th.icon:match(hovered)
+		local icon_text = (icon and icon.text) or ""
+		return icon_text ~= "" and (icon_text .. " " .. name) or name
+	else
+		return name
 	end
 end
 
