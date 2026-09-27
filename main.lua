@@ -23,16 +23,32 @@ local ui_redraw = ui.redraw
 local string_format = string.format
 local string_sub = string.sub
 local string_rep = string.rep
-local string_byte = string.byte
 local table_insert = table.insert
 local table_concat = table.concat
-local table_unpack = table.unpack
+local table_unpack = table.unpack -- don't do (or unpack)
 local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 local utf8_len = utf8 and utf8.len
 local utf8_offset = utf8 and utf8.offset
 local os_date = os.date
+
+--==================--
+-- Fast Unpack Helper --
+--==================--
+
+local function call_getter(getter, self_arg, params)
+	if not params or #params == 0 then
+		return getter(self_arg)
+	elseif #params == 1 then
+		return getter(self_arg, params[1])
+	elseif #params == 2 then
+		return getter(self_arg, params[1], params[2])
+	elseif #params == 3 then
+		return getter(self_arg, params[1], params[2], params[3])
+	end
+	return getter(self_arg, table_unpack(params))
+end
 
 --==================--
 -- Type Declaration --
@@ -303,7 +319,6 @@ local function trim_filename(filename, max_length, trim_length)
 		return filename
 	end
 
-	-- utf8sub_fast умеет работать с отрицательными индексами (-trim_length)
 	local head = utf8sub_fast(filename, 1, trim_length)
 	local tail = utf8sub_fast(filename, -trim_length, -1)
 
@@ -558,7 +573,7 @@ function Yatline.line.get:tabs(side)
 		sep_style.fg = nil
 
 		if i == cx.tabs.idx then
-			local tab = connect_padding(text, ComponentType.A, in_side)
+			local tab = connect_padding(ui_Span(text), ComponentType.A, in_side)
 			set_mode_style(cx.tabs[i].mode)
 			set_component_style(tab, ComponentType.A)
 
@@ -584,7 +599,9 @@ function Yatline.line.get:tabs(side)
 				set_component_style(outer, ComponentType.C)
 				set_component_style(tab, ComponentType.C)
 			else
-				apply_style_table(tab, { fg = Yatline.config.style_c.fg })
+				if Yatline.config.style_c.fg then
+					tab:fg(Yatline.config.style_c.fg)
+				end
 			end
 
 			if in_side == Side.LEFT then
@@ -680,6 +697,8 @@ function Yatline.coloreds.create(coloreds, component_type)
 
 	return ui_Line(spans)
 end
+
+local PERM_COLORS = {}
 
 local function refresh_perm_colors()
 	PERM_COLORS = {
@@ -813,12 +832,7 @@ function Yatline.coloreds.get:string_based_component(component_name, fg, params)
 	local getter = Yatline.string.get[component_name]
 
 	if getter then
-		local output
-		if params then
-			output = getter(Yatline.string.get, table_unpack(params))
-		else
-			output = getter()
-		end
+		local output = call_getter(getter, Yatline.string.get, params)
 
 		if output ~= nil and output ~= "" then
 			return { { output, fg } }
@@ -831,6 +845,8 @@ end
 --===============--
 -- Configuration --
 --===============--
+
+local tmp_sep_style = { bg = nil, fg = nil }
 
 local function config_components_separators(
 	comps,
@@ -845,7 +861,9 @@ local function config_components_separators(
 	for i = 1, num_section_components do
 		local comp = comps[i]
 		if seps[i] then
-			local separator_style = { bg = nil, fg = nil }
+			tmp_sep_style.bg = nil
+			tmp_sep_style.fg = nil
+			local separator_style = tmp_sep_style
 			local separator_type
 
 			if i ~= num_section_components then
@@ -910,11 +928,7 @@ local function config_section(section, component_type)
 				local getter = component_group.get[component.name]
 
 				if getter then
-					if component.params then
-						output = getter(component_group.get, table_unpack(component.params))
-					else
-						output = getter()
-					end
+					output = call_getter(getter, component_group.get, component.params)
 
 					if output ~= nil and output ~= "" then
 						ok = true
@@ -976,51 +990,36 @@ local function config_paragraph(area, line)
 	return txt
 end
 
+local function merge_tables(target, source)
+	for k, v in pairs(source) do
+		if type(v) == "table" and type(target[k]) == "table" then
+			merge_tables(target[k], v)
+		else
+			target[k] = v
+		end
+	end
+end
+
 return {
 	setup = function(_, config, pre_theme)
 		if config then
-			for _, line in ipairs({ "header_line", "status_line" }) do
-				if config[line] then
-					for _, side in ipairs({ "left", "right" }) do
-						if config[line][side] then
-							for _, section in ipairs({ "section_a", "section_b", "section_c" }) do
-								config[line][side][section] = config[line][side][section] or {}
-							end
-						else
-							config[line][side] = {}
-							for _, section in ipairs({ "section_a", "section_b", "section_c" }) do
-								config[line][side][section] = {}
-							end
-						end
-					end
-				end
-			end
-
-			config.theme = (not rt.term.light and config.theme_dark)
-				or (rt.term.light and config.theme_light)
+			local active_theme = (rt and rt.term and rt.term.light and config.theme_light)
+				or config.theme_dark
 				or config.theme
 
-			if config.theme then
-				for key, value in pairs(config.theme) do
-					if not config[key] then
+			if active_theme then
+				for key, value in pairs(active_theme) do
+					if config[key] == nil then
 						config[key] = value
 					end
 				end
 			end
 
-			for key, value in pairs(config) do
-				if Yatline.config[key] then
-					Yatline.config[key] = value
-				end
-			end
+			merge_tables(Yatline.config, config)
 		end
 
 		if pre_theme then
-			for key, value in pairs(pre_theme) do
-				if Yatline.config[key] then
-					Yatline.config[key] = value
-				end
-			end
+			merge_tables(Yatline.config, pre_theme)
 		end
 
 		update_padding_cache()
