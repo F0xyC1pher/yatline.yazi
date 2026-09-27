@@ -16,16 +16,23 @@ local ui_Line = ui.Line
 local ui_Text = ui.Text
 local ui_Layout = ui.Layout
 local ui_Constraint = ui.Constraint
+local ui_Align = ui.Align
+local ui_truncate = ui.truncate
+local ui_redraw = ui.redraw
+
 local string_format = string.format
 local string_sub = string.sub
 local string_rep = string.rep
 local string_byte = string.byte
 local table_insert = table.insert
-local table_unpack = table.unpack or unpack
+local table_concat = table.concat
+local table_unpack = table.unpack
 local math_floor = math.floor
 local math_max = math.max
 local math_min = math.min
 local utf8_len = utf8 and utf8.len
+local utf8_offset = utf8 and utf8.offset
+local os_date = os.date
 
 --==================--
 -- Type Declaration --
@@ -146,10 +153,23 @@ Yatline.config = {
 }
 
 --=================--
+-- Cached Padding  --
+--=================--
+
+local pad_inner_str = " "
+local pad_outer_str = " "
+
+local function update_padding_cache()
+	pad_inner_str = string_rep(" ", Yatline.config.padding.inner or 1)
+	pad_outer_str = string_rep(" ", Yatline.config.padding.outer or 1)
+end
+
+--=================--
 -- Component Setup --
 --=================--
 
 local function set_mode_style(mode)
+	if not mode then return end
 	if mode.is_select then
 		Yatline.config.style_a.bg = Yatline.config.style_a.bg_mode.select
 	elseif mode.is_unset then
@@ -188,10 +208,9 @@ local function set_component_style(component, component_type)
 end
 
 local function connect_padding(component, component_type, in_side)
-	local inner = ui_Span(string_rep(" ", Yatline.config.padding.inner))
-	local outer = ui_Span(string_rep(" ", Yatline.config.padding.outer))
+	local inner = ui_Span(pad_inner_str)
+	local outer = ui_Span(pad_outer_str)
 
-	set_mode_style(cx.active.mode)
 	set_component_style(inner, component_type)
 	set_component_style(outer, component_type)
 
@@ -242,51 +261,36 @@ end
 local function get_file_extension(file_name)
 	if not file_name then return "---" end
 	local extension = file_name:match("^.+%.(.+)$")
-	if extension == nil or extension == "" then
+	if not extension or extension == "" then
 		return "---"
 	end
 	return extension
 end
 
-local function reverse_order(array)
-	local n = #array
-	local reversed = table.new and table.new(n, 0) or {}
-	for i = 1, n do
-		reversed[i] = array[n - i + 1]
-	end
-	return reversed
-end
-
 local function utf8len_fast(s)
-	if not s then return 0 end
-	local len = #s
-	if len == 0 then return 0 end
-
-	if utf8_len then
-		return utf8_len(s) or len
-	end
-
-	local count = 0
-	for i = 1, len do
-		local b = string_byte(s, i)
-		if b < 128 or b >= 192 then
-			count = count + 1
-		end
-	end
-	return count
+	if not s or s == "" then return 0 end
+	return utf8_len and utf8_len(s) or #s
 end
 
 local function utf8sub_fast(s, i, j)
 	if not s or s == "" then return "" end
-	local l = utf8len_fast(s)
+	local len = utf8len_fast(s)
 
-	if i < 0 then i = l + i + 1 end
-	if j and j < 0 then j = l + j + 1 end
+	if i < 0 then i = len + i + 1 end
+	if j and j < 0 then j = len + j + 1 end
 	i = math_max(1, i)
-	j = math_min(l, j or l)
+	j = math_min(len, j or len)
 
 	if i > j then return "" end
 
+	if utf8_offset then
+		local start_byte = utf8_offset(s, i)
+		if not start_byte then return "" end
+		local end_byte = (j < len and utf8_offset(s, j + 1)) and (utf8_offset(s, j + 1) - 1) or #s
+		return string_sub(s, start_byte, end_byte)
+	end
+
+	-- Резервный вариант, если utf8.offset недоступен
 	local byte_start, byte_end
 	local char_idx = 0
 	local s_len = #s
@@ -298,15 +302,7 @@ local function utf8sub_fast(s, i, j)
 			byte_start = p
 		end
 		local b = string_byte(s, p)
-		if b < 128 then
-			p = p + 1
-		elseif b < 224 then
-			p = p + 2
-		elseif b < 240 then
-			p = p + 3
-		else
-			p = p + 4
-		end
+		p = p + (b < 128 and 1 or (b < 224 and 2 or (b < 240 and 3 or 4)))
 		if char_idx == j then
 			byte_end = p - 1
 			break
@@ -314,8 +310,7 @@ local function utf8sub_fast(s, i, j)
 	end
 
 	if not byte_start then return "" end
-	if not byte_end then byte_end = s_len end
-	return string_sub(s, byte_start, byte_end)
+	return string_sub(s, byte_start, byte_end or s_len)
 end
 
 local function trim_filename(filename, max_length, trim_length)
@@ -342,9 +337,7 @@ Yatline.string.has_separator = true
 
 function Yatline.string.create(str, component_type)
 	local span = ui_Span(str)
-	set_mode_style(cx.active.mode)
 	set_component_style(span, component_type)
-
 	return ui_Line({ span })
 end
 
@@ -366,7 +359,7 @@ function Yatline.string.get:hovered_name(trimmed, max_length, trim_length, show_
 		local trimmed_name = trim_filename(hovered.name, max_length, trim_length)
 		local trimmed_linked = #linked ~= 0
 				and link_delimiter .. trim_filename(
-					string_sub(linked, #link_delimiter + 1, -1),
+					string_sub(linked, #link_delimiter + 1),
 					max_length,
 					trim_length
 				)
@@ -387,10 +380,11 @@ function Yatline.string.get:hovered_path(trimmed, max_length, trim_length)
 		return ""
 	end
 
+	local path = ya.readable_path(tostring(hovered.url))
 	if trimmed then
-		return trim_filename(ya.readable_path(tostring(hovered.url)), max_length, trim_length)
+		return trim_filename(path, max_length, trim_length)
 	else
-		return ya.readable_path(tostring(hovered.url))
+		return path
 	end
 end
 
@@ -414,19 +408,14 @@ end
 
 function Yatline.string.get:hovered_ownership()
 	local hovered = cx.active.current.hovered
-
-	if hovered then
-		if not hovered.cha.uid or not hovered.cha.gid then
-			return ""
-		end
-
-		local username = ya.user_name(hovered.cha.uid) or tostring(hovered.cha.uid)
-		local groupname = ya.group_name(hovered.cha.gid) or tostring(hovered.cha.gid)
-
-		return username .. ":" .. groupname
-	else
+	if not hovered or not hovered.cha.uid or not hovered.cha.gid then
 		return ""
 	end
+
+	local username = ya.user_name(hovered.cha.uid) or tostring(hovered.cha.uid)
+	local groupname = ya.group_name(hovered.cha.gid) or tostring(hovered.cha.gid)
+
+	return username .. ":" .. groupname
 end
 
 function Yatline.string.get:hovered_file_extension(show_icon)
@@ -443,7 +432,7 @@ function Yatline.string.get:hovered_file_extension(show_icon)
 	end
 
 	if show_icon then
-		local icon = th.icon:match(hovered)
+		local icon = th and th.icon and th.icon:match(hovered)
 		local icon_text = (icon and icon.text) or ""
 		return icon_text ~= "" and (icon_text .. " " .. name) or name
 	else
@@ -460,28 +449,26 @@ function Yatline.string.get:tab_path(trimmed, max_length, trim_length)
 	local filter = cx.active.current.files.filter
 	local finder = cx.active.finder
 
-	local t = {}
-	if cwd.spec.is_search then
-		t[#t + 1] = string_format("search: %s", cwd.domain)
-	end
-	if filter then
-		t[#t + 1] = string_format("filter: %s", filter)
-	end
-	if finder then
-		t[#t + 1] = string_format("find: %s", finder)
-	end
-
-	local suffix
-	if #t ~= 0 then
-		suffix = " (" .. table.concat(t, ", ") .. ")"
-	else
-		suffix = ""
+	local suffix = ""
+	if cwd.spec.is_search or filter or finder then
+		local t = {}
+		if cwd.spec.is_search then
+			t[#t + 1] = string_format("search: %s", cwd.domain)
+		end
+		if filter then
+			t[#t + 1] = string_format("filter: %s", filter)
+		end
+		if finder then
+			t[#t + 1] = string_format("find: %s", finder)
+		end
+		suffix = " (" .. table_concat(t, ", ") .. ")"
 	end
 
+	local path = ya.readable_path(tostring(cwd))
 	if trimmed then
-		return trim_filename(ya.readable_path(tostring(cwd)), max_length, trim_length) .. suffix
+		return trim_filename(path, max_length, trim_length) .. suffix
 	else
-		return ya.readable_path(tostring(cwd)) .. suffix
+		return path .. suffix
 	end
 end
 
@@ -559,7 +546,7 @@ function Yatline.string.get:cursor_percentage()
 end
 
 function Yatline.string.get:date(format)
-	return tostring(os.date(format))
+	return tostring(os_date(format))
 end
 
 --======================--
@@ -581,35 +568,38 @@ function Yatline.line.get:tabs(side)
 	local lines = {}
 
 	local in_side = (side == "left") and Side.LEFT or Side.RIGHT
+	local sep_style = { bg = nil, fg = nil }
 
 	for i = 1, tabs do
 		local text = tostring(i)
 		if Yatline.config.tab_width > 2 then
-			text = ui.truncate(text .. " " .. cx.tabs[i].name, { max = Yatline.config.tab_width })
+			text = ui_truncate(text .. " " .. cx.tabs[i].name, { max = Yatline.config.tab_width })
 		end
 
-		local separator_style = { bg = nil, fg = nil }
+		sep_style.bg = nil
+		sep_style.fg = nil
+
 		if i == cx.tabs.idx then
 			local tab = connect_padding(text, ComponentType.A, in_side)
 			set_mode_style(cx.tabs[i].mode)
 			set_component_style(tab, ComponentType.A)
 
 			if Yatline.config.style_a.bg ~= "reset" or Yatline.config.show_background then
-				separator_style.fg = Yatline.config.style_a.bg
+				sep_style.fg = Yatline.config.style_a.bg
 				if Yatline.config.show_background then
-					separator_style.bg = Yatline.config.style_c.bg
+					sep_style.bg = Yatline.config.style_c.bg
 				end
 
-				lines[#lines + 1] = connect_separator(tab, in_side, SeparatorType.OUTER, separator_style)
+				lines[#lines + 1] = connect_separator(tab, in_side, SeparatorType.OUTER, sep_style)
 			else
-				separator_style.fg = Yatline.config.style_a.fg
+				sep_style.fg = Yatline.config.style_a.fg
 
-				lines[#lines + 1] = connect_separator(tab, in_side, SeparatorType.INNER, separator_style)
+				lines[#lines + 1] = connect_separator(tab, in_side, SeparatorType.INNER, sep_style)
 			end
 		else
 			local tab = ui_Span(text)
-			local inner = ui_Span(string_rep(" ", Yatline.config.padding.inner))
-			local outer = ui_Span(string_rep(" ", Yatline.config.padding.outer))
+			local inner = ui_Span(pad_inner_str)
+			local outer = ui_Span(pad_outer_str)
 
 			if Yatline.config.show_background then
 				set_component_style(inner, ComponentType.C)
@@ -637,31 +627,31 @@ function Yatline.line.get:tabs(side)
 						not Yatline.config.show_background
 						or (Yatline.config.show_background and Yatline.config.style_c.bg == "reset")
 					then
-						separator_style.fg = Yatline.config.style_a.bg
+						sep_style.fg = Yatline.config.style_a.bg
 						if Yatline.config.show_background then
-							separator_style.bg = Yatline.config.style_c.bg
+							sep_style.bg = Yatline.config.style_c.bg
 						end
 
 						open = ui_Span(Yatline.config.inverse_separator.open)
 						close = ui_Span(Yatline.config.inverse_separator.close)
 					else
-						separator_style.bg = Yatline.config.style_a.bg
+						sep_style.bg = Yatline.config.style_a.bg
 						if Yatline.config.show_background then
-							separator_style.fg = Yatline.config.style_c.bg
+							sep_style.fg = Yatline.config.style_c.bg
 						end
 
 						open = ui_Span(Yatline.config.section_separator.open)
 						close = ui_Span(Yatline.config.section_separator.close)
 					end
 				else
-					separator_style.fg = Yatline.config.style_c.fg
+					sep_style.fg = Yatline.config.style_c.fg
 
 					open = ui_Span(Yatline.config.part_separator.open)
 					close = ui_Span(Yatline.config.part_separator.close)
 				end
 
-				apply_style_table(open, separator_style)
-				apply_style_table(close, separator_style)
+				apply_style_table(open, sep_style)
+				apply_style_table(close, sep_style)
 
 				if in_side == Side.LEFT then
 					lines[#lines + 1] = ui_Line({ tab, close })
@@ -669,18 +659,23 @@ function Yatline.line.get:tabs(side)
 					lines[#lines + 1] = ui_Line({ open, tab })
 				end
 			else
-				separator_style.fg = Yatline.config.style_c.fg
+				sep_style.fg = Yatline.config.style_c.fg
 				if Yatline.config.show_background then
-					separator_style.bg = Yatline.config.style_c.bg
+					sep_style.bg = Yatline.config.style_c.bg
 				end
 
-				lines[#lines + 1] = connect_separator(tab, in_side, SeparatorType.INNER, separator_style)
+				lines[#lines + 1] = connect_separator(tab, in_side, SeparatorType.INNER, sep_style)
 			end
 		end
 	end
 
 	if in_side == Side.RIGHT then
-		return ui_Line(reverse_order(lines))
+		local rev = {}
+		local n = #lines
+		for i = 1, n do
+			rev[i] = lines[n - i + 1]
+		end
+		return ui_Line(rev)
 	else
 		return ui_Line(lines)
 	end
@@ -695,8 +690,6 @@ Yatline.coloreds.get = {}
 Yatline.coloreds.has_separator = true
 
 function Yatline.coloreds.create(coloreds, component_type)
-	set_mode_style(cx.active.mode)
-
 	local spans = {}
 	for i = 1, #coloreds do
 		local colored = coloreds[i]
@@ -712,20 +705,24 @@ end
 
 local PERM_COLORS = nil
 
+---@return table<string, string>
+local function refresh_perm_colors()
+    PERM_COLORS = {
+        ["-"] = Yatline.config.permissions_s_fg,
+        ["r"] = Yatline.config.permissions_r_fg,
+        ["w"] = Yatline.config.permissions_w_fg,
+        ["x"] = Yatline.config.permissions_x_fg,
+        ["s"] = Yatline.config.permissions_x_fg,
+        ["S"] = Yatline.config.permissions_x_fg,
+        ["t"] = Yatline.config.permissions_x_fg,
+        ["T"] = Yatline.config.permissions_x_fg,
+    }
+    return PERM_COLORS
+end
+
 local function get_perm_color(char)
-	if not PERM_COLORS then
-		PERM_COLORS = {
-			["-"] = Yatline.config.permissions_s_fg,
-			["r"] = Yatline.config.permissions_r_fg,
-			["w"] = Yatline.config.permissions_w_fg,
-			["x"] = Yatline.config.permissions_x_fg,
-			["s"] = Yatline.config.permissions_x_fg,
-			["S"] = Yatline.config.permissions_x_fg,
-			["t"] = Yatline.config.permissions_x_fg,
-			["T"] = Yatline.config.permissions_x_fg,
-		}
-	end
-	return PERM_COLORS[char] or Yatline.config.permissions_t_fg
+    local colors = PERM_COLORS or refresh_perm_colors()
+    return colors[char] or Yatline.config.permissions_t_fg
 end
 
 function Yatline.coloreds.get:permissions()
@@ -858,20 +855,21 @@ end
 --===============--
 
 local function config_components_separators(
-	section_components,
+	comps,
+	seps,
+	num_section_components,
 	component_type,
 	in_side,
 	num_section_b_components,
 	num_section_c_components
 )
-	local num_section_components = #section_components
 	local section_line_components = {}
 	for i = 1, num_section_components do
-		local component = section_components[i]
-		if component[2] == true then
+		local comp = comps[i]
+		if seps[i] then
 			local separator_style = { bg = nil, fg = nil }
-
 			local separator_type
+
 			if i ~= num_section_components then
 				separator_type = SeparatorType.INNER
 
@@ -904,10 +902,10 @@ local function config_components_separators(
 				end
 			end
 
-			component[1] = connect_padding(component[1], component_type, in_side)
-			section_line_components[i] = connect_separator(component[1], in_side, separator_type, separator_style)
+			comp = connect_padding(comp, component_type, in_side)
+			section_line_components[i] = connect_separator(comp, in_side, separator_type, separator_style)
 		else
-			section_line_components[i] = component[1]
+			section_line_components[i] = comp
 		end
 	end
 
@@ -915,23 +913,25 @@ local function config_components_separators(
 end
 
 local function config_section(section, component_type)
-	local section_components = {}
+	local comps = {}
+	local seps = {}
+	local count = 0
 
 	for i = 1, #section do
 		local component = section[i]
 		local component_group = Yatline[component.type]
 
 		if component_group then
+			local output, ok = nil, false
 			if component.custom then
-				if component.name ~= nil and component.name ~= "" and #component.name ~= 0 then
-					section_components[#section_components + 1] =
-						{ component_group.create(component.name, component_type), component_group.has_separator }
+				if component.name and component.name ~= "" then
+					output = component.name
+					ok = true
 				end
 			else
 				local getter = component_group.get[component.name]
 
 				if getter then
-					local output
 					if component.params then
 						output = getter(component_group.get, table_unpack(component.params))
 					else
@@ -939,61 +939,41 @@ local function config_section(section, component_type)
 					end
 
 					if output ~= nil and output ~= "" then
-						section_components[#section_components + 1] =
-							{ component_group.create(output, component_type), component_group.has_separator }
+						ok = true
 					end
 				end
+			end
+
+			if ok then
+				count = count + 1
+				comps[count] = component_group.create(output, component_type)
+				seps[count] = component_group.has_separator
 			end
 		end
 	end
 
-	return section_components
+	return comps, seps, count
 end
 
 local function config_line(side, in_side)
-	local section_a_components = config_section(side.section_a, ComponentType.A)
-	local section_b_components = config_section(side.section_b, ComponentType.B)
-	local section_c_components = config_section(side.section_c, ComponentType.C)
+	local comps_a, seps_a, num_a = config_section(side.section_a, ComponentType.A)
+	local comps_b, seps_b, num_b = config_section(side.section_b, ComponentType.B)
+	local comps_c, seps_c, num_c = config_section(side.section_c, ComponentType.C)
 
-	local num_section_b_components = #section_b_components
-	local num_section_c_components = #section_c_components
-
-	local section_a_line_components = config_components_separators(
-		section_a_components,
-		ComponentType.A,
-		in_side,
-		num_section_b_components,
-		num_section_c_components
-	)
-	local section_b_line_components = config_components_separators(
-		section_b_components,
-		ComponentType.B,
-		in_side,
-		num_section_b_components,
-		num_section_c_components
-	)
-	local section_c_line_components = config_components_separators(
-		section_c_components,
-		ComponentType.C,
-		in_side,
-		num_section_b_components,
-		num_section_c_components
-	)
+	local section_a_line_components = config_components_separators(comps_a, seps_a, num_a, ComponentType.A, in_side, num_b, num_c)
+	local section_b_line_components = config_components_separators(comps_b, seps_b, num_b, ComponentType.B, in_side, num_b, num_c)
+	local section_c_line_components = config_components_separators(comps_c, seps_c, num_c, ComponentType.C, in_side, num_b, num_c)
 
 	if in_side == Side.RIGHT then
-		section_a_line_components = reverse_order(section_a_line_components)
-		section_b_line_components = reverse_order(section_b_line_components)
-		section_c_line_components = reverse_order(section_c_line_components)
-	end
+		local a_rev, b_rev, c_rev = {}, {}, {}
+		local na, nb, nc = #section_a_line_components, #section_b_line_components, #section_c_line_components
+		for i = 1, na do a_rev[i] = section_a_line_components[na - i + 1] end
+		for i = 1, nb do b_rev[i] = section_b_line_components[nb - i + 1] end
+		for i = 1, nc do c_rev[i] = section_c_line_components[nc - i + 1] end
 
-	local section_a_line = ui_Line(section_a_line_components)
-	local section_b_line = ui_Line(section_b_line_components)
-	local section_c_line = ui_Line(section_c_line_components)
-
-	if in_side == Side.LEFT then
-		return ui_Line({ section_a_line, section_b_line, section_c_line })
+		return ui_Line({ ui_Line(c_rev), ui_Line(b_rev), ui_Line(a_rev) })
 	else
-		return ui_Line({ section_c_line, section_b_line, section_a_line })
+		return ui_Line({ ui_Line(section_a_line_components), ui_Line(section_b_line_components), ui_Line(section_c_line_components) })
 	end
 end
 
@@ -1064,12 +1044,16 @@ return {
 			end
 		end
 
+		update_padding_cache()
+		refresh_perm_colors()
+
 		if Yatline.config.display_header_line then
 			if show_line(Yatline.config.header_line) then
 				Header._left = {}
 				Header._right = {}
 
 				Header.redraw = function(self)
+					set_mode_style(cx.active.mode)
 					local right = self:children_redraw(self.RIGHT)
 					self._right_width = right:width()
 					local left = self:children_redraw(self.LEFT)
@@ -1079,7 +1063,7 @@ return {
 
 					return {
 						config_paragraph(self._area, ui_Line({ left_line, left })),
-						ui_Line({ right, right_line }):area(self._area):align(ui.Align.RIGHT),
+						ui_Line({ right, right_line }):area(self._area):align(ui_Align.RIGHT),
 					}
 				end
 			end
@@ -1095,6 +1079,7 @@ return {
 				Status._right = {}
 
 				Status.redraw = function(self)
+					set_mode_style(cx.active.mode)
 					local left = self:children_redraw(self.LEFT)
 					local right = self:children_redraw(self.RIGHT)
 
@@ -1104,8 +1089,8 @@ return {
 					local sum_right = ui_Line({ right, right_line })
 					return {
 						config_paragraph(self._area, ui_Line({ left_line, left })),
-						sum_right:area(self._area):align(ui.Align.RIGHT),
-						table_unpack(ui.redraw(Progress:new(self._area, sum_right:width()))),
+						sum_right:area(self._area):align(ui_Align.RIGHT),
+						table_unpack(ui_redraw(Progress:new(self._area, sum_right:width()))),
 					}
 				end
 			end
