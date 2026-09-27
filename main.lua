@@ -969,41 +969,38 @@ end
 --- Gets the hovered file's permissions of the current active tab.
 --- Unix-like systems only.
 --- @return Coloreds? coloreds Current active tab's hovered file's permissions
+local PERM_COLORS = nil
+
+local function get_perm_color(char)
+	if not PERM_COLORS then
+		PERM_COLORS = {
+			["-"] = Yatline.config.permissions_s_fg,
+			["r"] = Yatline.config.permissions_r_fg,
+			["w"] = Yatline.config.permissions_w_fg,
+			["x"] = Yatline.config.permissions_x_fg,
+			["s"] = Yatline.config.permissions_x_fg,
+			["S"] = Yatline.config.permissions_x_fg,
+			["t"] = Yatline.config.permissions_x_fg,
+			["T"] = Yatline.config.permissions_x_fg,
+		}
+	end
+	return PERM_COLORS[char] or Yatline.config.permissions_t_fg
+end
 function Yatline.coloreds.get:permissions()
 	local hovered = cx.active.current.hovered
+	if not hovered then return nil end
 
-	if hovered then
-		local perm = hovered.cha:perm()
+	local perm = hovered.cha:perm()
+	if not perm then return nil end
 
-		if perm then
-			local coloreds = {}
-
-			for i = 1, #perm do
-				local c = perm:sub(i, i)
-
-				local fg = Yatline.config.permissions_t_fg
-				if c == "-" then
-					fg = Yatline.config.permissions_s_fg
-				elseif c == "r" then
-					fg = Yatline.config.permissions_r_fg
-				elseif c == "w" then
-					fg = Yatline.config.permissions_w_fg
-				elseif c == "x" or c == "s" or c == "S" or c == "t" or c == "T" then
-					fg = Yatline.config.permissions_x_fg
-				end
-
-				table.insert(coloreds, { c, fg })
-			end
-
-			return coloreds
-		else
-			return nil
-		end
-	else
-		return nil
+	local coloreds = {}
+	for i = 1, #perm do
+		local c = string.sub(perm, i, i)
+		coloreds[i] = { c, get_perm_color(c) }
 	end
-end
 
+	return coloreds
+end
 --- Gets the number of selected and yanked files and also number of files or filtered files of the active tab.
 --- @param filter? boolean Whether or not number of files (or filtered files) will be shown.
 --- @param zero_check? boolean Whether or not counts will be shown if count is zero.
