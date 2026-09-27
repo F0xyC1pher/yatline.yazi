@@ -133,7 +133,7 @@ Yatline.config = {
 				{ type = "string", name = "hovered_size" },
 			},
 			section_c = {
-				{ type = "string", name = "hovered_path" },
+				{ type = "string",   name = "hovered_path" },
 				{ type = "coloreds", name = "count" },
 			},
 		},
@@ -145,7 +145,7 @@ Yatline.config = {
 				{ type = "string", name = "cursor_percentage" },
 			},
 			section_c = {
-				{ type = "string", name = "hovered_file_extension", params = { true } },
+				{ type = "string",   name = "hovered_file_extension", params = { true } },
 				{ type = "coloreds", name = "permissions" },
 			},
 		},
@@ -290,27 +290,7 @@ local function utf8sub_fast(s, i, j)
 		return string_sub(s, start_byte, end_byte)
 	end
 
-	-- Резервный вариант, если utf8.offset недоступен
-	local byte_start, byte_end
-	local char_idx = 0
-	local s_len = #s
-	local p = 1
-
-	while p <= s_len do
-		char_idx = char_idx + 1
-		if char_idx == i then
-			byte_start = p
-		end
-		local b = string_byte(s, p)
-		p = p + (b < 128 and 1 or (b < 224 and 2 or (b < 240 and 3 or 4)))
-		if char_idx == j then
-			byte_end = p - 1
-			break
-		end
-	end
-
-	if not byte_start then return "" end
-	return string_sub(s, byte_start, byte_end or s_len)
+	return string_sub(s, i, j)
 end
 
 local function trim_filename(filename, max_length, trim_length)
@@ -319,12 +299,15 @@ local function trim_filename(filename, max_length, trim_length)
 	end
 
 	local len = utf8len_fast(filename)
-
 	if len <= max_length or len <= trim_length * 2 then
 		return filename
 	end
 
-	return utf8sub_fast(filename, 1, trim_length) .. "..." .. utf8sub_fast(filename, len - trim_length + 1, len)
+	-- utf8sub_fast умеет работать с отрицательными индексами (-trim_length)
+	local head = utf8sub_fast(filename, 1, trim_length)
+	local tail = utf8sub_fast(filename, -trim_length, -1)
+
+	return head .. "..." .. tail
 end
 
 --========================--
@@ -358,11 +341,11 @@ function Yatline.string.get:hovered_name(trimmed, max_length, trim_length, show_
 	if trimmed then
 		local trimmed_name = trim_filename(hovered.name, max_length, trim_length)
 		local trimmed_linked = #linked ~= 0
-				and link_delimiter .. trim_filename(
-					string_sub(linked, #link_delimiter + 1),
-					max_length,
-					trim_length
-				)
+			and link_delimiter .. trim_filename(
+				string_sub(linked, #link_delimiter + 1),
+				max_length,
+				trim_length
+			)
 			or ""
 		return trimmed_name .. trimmed_linked
 	else
@@ -424,20 +407,15 @@ function Yatline.string.get:hovered_file_extension(show_icon)
 		return ""
 	end
 
-	local name
-	if hovered.cha.is_dir then
-		name = "dir"
-	else
-		name = get_file_extension(hovered.name or hovered.url.name)
-	end
+	local name = hovered.cha.is_dir and "dir" or get_file_extension(hovered.name)
 
 	if show_icon then
 		local icon = th and th.icon and th.icon:match(hovered)
 		local icon_text = (icon and icon.text) or ""
-		return icon_text ~= "" and (icon_text .. " " .. name) or name
-	else
-		return name
+		return (icon_text ~= "" and (icon_text .. " " .. name)) or name
 	end
+
+	return name
 end
 
 function Yatline.string.get:tab_path(trimmed, max_length, trim_length)
@@ -703,26 +681,21 @@ function Yatline.coloreds.create(coloreds, component_type)
 	return ui_Line(spans)
 end
 
-local PERM_COLORS = nil
-
----@return table<string, string>
 local function refresh_perm_colors()
-    PERM_COLORS = {
-        ["-"] = Yatline.config.permissions_s_fg,
-        ["r"] = Yatline.config.permissions_r_fg,
-        ["w"] = Yatline.config.permissions_w_fg,
-        ["x"] = Yatline.config.permissions_x_fg,
-        ["s"] = Yatline.config.permissions_x_fg,
-        ["S"] = Yatline.config.permissions_x_fg,
-        ["t"] = Yatline.config.permissions_x_fg,
-        ["T"] = Yatline.config.permissions_x_fg,
-    }
-    return PERM_COLORS
+	PERM_COLORS = {
+		["-"] = Yatline.config.permissions_s_fg,
+		["r"] = Yatline.config.permissions_r_fg,
+		["w"] = Yatline.config.permissions_w_fg,
+		["x"] = Yatline.config.permissions_x_fg,
+		["s"] = Yatline.config.permissions_x_fg,
+		["S"] = Yatline.config.permissions_x_fg,
+		["t"] = Yatline.config.permissions_x_fg,
+		["T"] = Yatline.config.permissions_x_fg,
+	}
 end
 
 local function get_perm_color(char)
-    local colors = PERM_COLORS or refresh_perm_colors()
-    return colors[char] or Yatline.config.permissions_t_fg
+	return PERM_COLORS[char] or Yatline.config.permissions_t_fg
 end
 
 function Yatline.coloreds.get:permissions()
@@ -733,9 +706,10 @@ function Yatline.coloreds.get:permissions()
 	if not perm then return nil end
 
 	local coloreds = {}
-	for i = 1, #perm do
-		local c = string_sub(perm, i, i)
-		coloreds[i] = { c, get_perm_color(c) }
+	local idx = 1
+	for c in perm:gmatch(".") do
+		coloreds[idx] = { c, get_perm_color(c) }
+		idx = idx + 1
 	end
 
 	return coloreds
@@ -771,7 +745,8 @@ function Yatline.coloreds.get:count(filter, zero_check)
 			coloreds[#coloreds + 1] = { " ", Yatline.config.selected.fg }
 		end
 
-		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.selected.icon, num_selected), Yatline.config.selected.fg }
+		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.selected.icon, num_selected), Yatline.config
+			.selected.fg }
 	end
 
 	if (zero_check and num_yanked > 0) or not zero_check then
@@ -805,7 +780,8 @@ function Yatline.coloreds.get:task_states(zero_check)
 	local coloreds = {}
 
 	if (zero_check and summary.total > 0) or not zero_check then
-		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.total.icon, summary.total), Yatline.config.total.fg }
+		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.total.icon, summary.total), Yatline.config
+			.total.fg }
 	end
 
 	if (zero_check and summary.success > 0) or not zero_check then
@@ -813,7 +789,8 @@ function Yatline.coloreds.get:task_states(zero_check)
 			coloreds[#coloreds + 1] = { " ", Yatline.config.success.fg }
 		end
 
-		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.success.icon, summary.success), Yatline.config.success.fg }
+		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.success.icon, summary.success), Yatline.config
+			.success.fg }
 	end
 
 	if (zero_check and summary.failed > 0) or not zero_check then
@@ -821,7 +798,8 @@ function Yatline.coloreds.get:task_states(zero_check)
 			coloreds[#coloreds + 1] = { " ", Yatline.config.failed.fg }
 		end
 
-		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.failed.icon, summary.failed), Yatline.config.failed.fg }
+		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.failed.icon, summary.failed), Yatline.config
+			.failed.fg }
 	end
 
 	if #coloreds > 0 then
@@ -960,20 +938,21 @@ local function config_line(side, in_side)
 	local comps_b, seps_b, num_b = config_section(side.section_b, ComponentType.B)
 	local comps_c, seps_c, num_c = config_section(side.section_c, ComponentType.C)
 
-	local section_a_line_components = config_components_separators(comps_a, seps_a, num_a, ComponentType.A, in_side, num_b, num_c)
-	local section_b_line_components = config_components_separators(comps_b, seps_b, num_b, ComponentType.B, in_side, num_b, num_c)
-	local section_c_line_components = config_components_separators(comps_c, seps_c, num_c, ComponentType.C, in_side, num_b, num_c)
+	local section_a = config_components_separators(comps_a, seps_a, num_a, ComponentType.A, in_side, num_b, num_c)
+	local section_b = config_components_separators(comps_b, seps_b, num_b, ComponentType.B, in_side, num_b, num_c)
+	local section_c = config_components_separators(comps_c, seps_c, num_c, ComponentType.C, in_side, num_b, num_c)
 
 	if in_side == Side.RIGHT then
-		local a_rev, b_rev, c_rev = {}, {}, {}
-		local na, nb, nc = #section_a_line_components, #section_b_line_components, #section_c_line_components
-		for i = 1, na do a_rev[i] = section_a_line_components[na - i + 1] end
-		for i = 1, nb do b_rev[i] = section_b_line_components[nb - i + 1] end
-		for i = 1, nc do c_rev[i] = section_c_line_components[nc - i + 1] end
+		local reversed = {}
+		local idx = 1
 
-		return ui_Line({ ui_Line(c_rev), ui_Line(b_rev), ui_Line(a_rev) })
+		for i = #section_c, 1, -1 do reversed[idx] = section_c[i]; idx = idx + 1 end
+		for i = #section_b, 1, -1 do reversed[idx] = section_b[i]; idx = idx + 1 end
+		for i = #section_a, 1, -1 do reversed[idx] = section_a[i]; idx = idx + 1 end
+
+		return ui_Line(reversed)
 	else
-		return ui_Line({ ui_Line(section_a_line_components), ui_Line(section_b_line_components), ui_Line(section_c_line_components) })
+		return ui_Line({ ui_Line(section_a), ui_Line(section_b), ui_Line(section_c) })
 	end
 end
 
