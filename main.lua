@@ -390,8 +390,24 @@ end
 --- @param s string The string to process.
 --- @return integer The number of characters in the string.
 local function utf8len(s)
-	-- count the number of non-continuing bytes
-	return select(2, s:gsub("[^\128-\193]", ""))
+	if not s then return 0 end
+	local len = #s
+	if len == 0 then return 0 end
+
+	-- Используем встроенный utf8 Lua, если доступен
+	if utf8 and utf8.len then
+		return utf8.len(s) or len
+	end
+
+	-- Fallback без вызова s:gsub()
+	local count = 0
+	for i = 1, len do
+		local b = string.byte(s, i)
+		if b < 128 or b >= 192 then
+			count = count + 1
+		end
+	end
+	return count
 end
 
 --- like string.sub() but i, j are utf8 strings
