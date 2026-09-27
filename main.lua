@@ -8,84 +8,51 @@
 --- @alias Color Color Comes from Yazi.
 
 --==================--
+-- Localized Globals --
+--==================--
+
+local ui_Span = ui.Span
+local ui_Line = ui.Line
+local ui_Text = ui.Text
+local ui_Layout = ui.Layout
+local ui_Constraint = ui.Constraint
+local string_format = string.format
+local string_sub = string.sub
+local string_rep = string.rep
+local string_byte = string.byte
+local table_insert = table.insert
+local table_unpack = table.unpack or unpack
+local math_floor = math.floor
+local math_max = math.max
+local math_min = math.min
+local utf8_len = utf8 and utf8.len
+
+--==================--
 -- Type Declaration --
 --==================--
 
 --- @enum Side
 local Side = {
-	LEFT = 0, -- The left side of either the header-line or status-line. [ LEFT ... ]
-	RIGHT = 1, -- The right side of either the header-line or status-line. [ ... RIGHT]
+	LEFT = 0,
+	RIGHT = 1,
 }
 
 --- @enum SeparatorType
 local SeparatorType = {
-	OUTER = 0, -- Separators on the outer side of sections. [ c o | c o | c o ... ] or [ ... o c | o c | o c ]
-	INNER = 1, -- Separators on the inner side of sections. [ c i c | c i c | c i c ... ] or [ ... c i c | c i c | c i c ]
+	OUTER = 0,
+	INNER = 1,
 }
 
 --- @enum ComponentType
 local ComponentType = {
-	A = 0, -- Components on the first section. [ A | | ... ] or [ ... | | A ]
-	B = 1, -- Components on the second section. [ | B | ... ] or [ ... | B | ]
-	C = 2, -- Components on the third section. [ | | C ... ] or [ ... C | | ]
+	A = 0,
+	B = 1,
+	C = 2,
 }
 
---- @alias Colored [string, Color] Stores text and its foreground color.
---- @alias Coloreds Colored[] The array of Coloreds.
-
---- @generic T
---- @alias T T Type of the component.
-
 --- @class Yatline
---- @field config YatlineConfig Configuration of Yatline.
---- @field string? {} Table that stores string components.
---- @field line? {} Table that stores Line components.
---- @field coloreds? {} Table that stores Coloreds components.
 Yatline = {}
 
---- @class (exact) ComponentConfig
---- @field type string Defines the type of the component (T).
---- @field custom? boolean Toggles the usage of a function defined or name field.
---- @field name string | T Either defined function name or variable of defined type T.
---- @field params? {} Contains the parameters that can be used by the function called.
-
---- @class (exact) SideConfig
---- @field section_a ComponentConfig[] Array of configuration of components in the first section.
---- @field section_b ComponentConfig[] Array of configuration of components in the second section.
---- @field section_c ComponentConfig[] Array of configuration of components in the third section.
-
---- @class (exact) LineConfig
---- @field left SideConfig Configuration of the left side of the line.
---- @field right SideConfig Configuration of the right side of the line.
-
---- @class (exact) YatlineConfig
---- @field section_separator {open: string, close: string} Separators that are between sections.
---- @field part_separator {open: string, close: string} Separators that are between components.
---- @field inverse_separator {open: string, close: string} Separators that are used when foreground color of separator is reset.
---- @field padding {inner: integer, outer: integer} Number of space padding surronding the component.
---- @field style_a {bg: Color, fg: Color, bg_mode: {normal: Color, select: Color, un_set: Color}} Style of the first section.
---- @field style_b {bg: Color, fg: Color} Style of the second section.
---- @field style_c {bg: Color, fg: Color} Style of the third section.
---- @field permissions_t_fg Color Foreground color of the type of permission.
---- @field permissions_r_fg Color Foreground color of the read permission.
---- @field permissions_w_fg Color Foreground color of the write permission.
---- @field permissions_x_fg Color Foreground color of the execute permission.
---- @field permissions_s_fg Color Foreground color of the separators between permission.
---- @field tab_width integer Maximum tab width of the tabs component.
---- @field selected {icon: string, fg: Color} Configuration for the count of files that selected.
---- @field copied {icon: string, fg: Color} Configuration for the count of files that copied.
---- @field cut {icon: string, fg: Color} Configuration for the count of files that cut.
---- @field files {icon: string, fg: Color} Configuration for the count of files in the active tab.
---- @field filtereds {icon: string, fg: Color} Configuration for the count of files in the active tab that are filtered.
---- @field total {icon: string, fg: Color} Configuration for the count of progress tasks that finished.
---- @field success {icon: string, fg: Color} Configuration for the count of progress tasks that successed.
---- @field failed {icon: string, fg: Color} Configuration for the count of progress tasks that failed.
---- @field show_background boolean Toggle the visibility of the background where no component exists.
---- @field display_header_line boolean Toggle the visibility of the header-line.
---- @field display_status_line boolean Toggle the visibility of the status-line.
---- @field component_positions string[] Arrange positions of the Yazi sections.
---- @field header_line LineConfig Configuration of header-line components.
---- @field status_line LineConfig Configuration of status-line components.
 Yatline.config = {
 	section_separator = { open = "", close = "" },
 	part_separator = { open = "", close = "" },
@@ -182,9 +149,6 @@ Yatline.config = {
 -- Component Setup --
 --=================--
 
---- Sets the background of style_a according to the tab's mode.
---- @param mode Mode The mode of the active tab.
---- @see cx.active.mode To get the active tab's mode.
 local function set_mode_style(mode)
 	if mode.is_select then
 		Yatline.config.style_a.bg = Yatline.config.style_a.bg_mode.select
@@ -195,99 +159,24 @@ local function set_mode_style(mode)
 	end
 end
 
---- Helper function to apply style table to a component
---- @param component Span The component to style
---- @param style table The style table with fg and/or bg fields
 local function apply_style_table(component, style)
 	if not style then
 		return component
 	end
-	-- Apply manually
-	if style.fg then
-		component:fg(style.fg)
-	end
-	if style.bg then
-		component:bg(style.bg)
-	end
-	if style.bold then
-		component:bold()
-	end
-	if style.dim then
-		component:dim()
-	end
-	if style.italic then
-		component:italic()
-	end
-	if style.underline then
-		component:underline()
-	end
-	if style.blink then
-		component:blink()
-	end
-	if style.blink_rapid then
-		component:blink_rapid()
-	end
-	if style.reverse then
-		component:reverse()
-	end
-	if style.hidden then
-		component:hidden()
-	end
-	if style.crossed then
-		component:crossed()
-	end
-
+	if style.fg then component:fg(style.fg) end
+	if style.bg then component:bg(style.bg) end
+	if style.bold then component:bold() end
+	if style.dim then component:dim() end
+	if style.italic then component:italic() end
+	if style.underline then component:underline() end
+	if style.blink then component:blink() end
+	if style.blink_rapid then component:blink_rapid() end
+	if style.reverse then component:reverse() end
+	if style.hidden then component:hidden() end
+	if style.crossed then component:crossed() end
 	return component
 end
 
---- Helper function to apply style table to a component
---- @param component Span The component to style
---- @param style table The style table with fg and/or bg fields
-local function apply_style_table(component, style)
-	if not style then
-		return component
-	end
-	-- Apply manually
-	if style.fg then
-			component:fg(style.fg)
-		end
-		if style.bg then
-			component:bg(style.bg)
-		end
-		if style.bold then
-			component:bold()
-		end
-		if style.dim then
-			component:dim()
-		end
-		if style.italic then
-			component:italic()
-		end
-		if style.underline then
-			component:underline()
-		end
-		if style.blink then
-			component:blink()
-		end
-		if style.blink_rapid then
-			component:blink_rapid()
-		end
-		if style.reverse then
-			component:reverse()
-		end
-		if style.hidden then
-			component:hidden()
-		end
-		if style.crossed then
-			component:crossed()
-		end
-	return component
-end
-
---- Sets the style of the component according to the its type.
---- @param component Span Component that will be styled.
---- @param component_type ComponentType Which section component will be in [ a | b | c ].
---- @see Style To see how to style, in Yazi's documentation.
 local function set_component_style(component, component_type)
 	if component_type == ComponentType.A then
 		apply_style_table(component, Yatline.config.style_a):bold()
@@ -298,62 +187,51 @@ local function set_component_style(component, component_type)
 	end
 end
 
---- Surronds component with paddings.
---- @param component string | Span | Line Component that will be connected to paddings.
---- @param component_type ComponentType Which section component will be in [ a | b | c ].
---- @param in_side Side Left or right side of the either header-line or status-line.
---- @return Line line A Line which is a component that has padding.
 local function connect_padding(component, component_type, in_side)
-	local inner = ui.Span(string.rep(" ", Yatline.config.padding.inner))
-	local outer = ui.Span(string.rep(" ", Yatline.config.padding.outer))
+	local inner = ui_Span(string_rep(" ", Yatline.config.padding.inner))
+	local outer = ui_Span(string_rep(" ", Yatline.config.padding.outer))
 
 	set_mode_style(cx.active.mode)
 	set_component_style(inner, component_type)
 	set_component_style(outer, component_type)
 
 	if in_side == Side.LEFT then
-		return ui.Line({ outer, component, inner })
+		return ui_Line({ outer, component, inner })
 	else
-		return ui.Line({ inner, component, outer })
+		return ui_Line({ inner, component, outer })
 	end
 end
 
---- Connects component to a separator.
---- @param component Span Component that will be connected to separator.
---- @param in_side Side Left or right side of the either header-line or status-line.
---- @param separator_type SeparatorType Where will there be a separator in the section.
---- @param separator_style {bg: string?, fg: string?} Holds the style of the separator.
---- @return Line line A Line which may have either both component and separator, or component.
 local function connect_separator(component, in_side, separator_type, separator_style)
 	local open, close
 	if
 		separator_type == SeparatorType.OUTER and not (separator_style.bg == "reset" and separator_style.fg == "reset")
 	then
-		open = ui.Span(Yatline.config.section_separator.open)
-		close = ui.Span(Yatline.config.section_separator.close)
+		open = ui_Span(Yatline.config.section_separator.open)
+		close = ui_Span(Yatline.config.section_separator.close)
 
 		if separator_style.fg == "reset" then
 			if separator_style.bg ~= "" then
-				open = ui.Span(Yatline.config.inverse_separator.open)
-				close = ui.Span(Yatline.config.inverse_separator.close)
+				open = ui_Span(Yatline.config.inverse_separator.open)
+				close = ui_Span(Yatline.config.inverse_separator.close)
 
 				separator_style.fg, separator_style.bg = separator_style.bg, separator_style.fg
 			else
-				return ui.Line({ component })
+				return ui_Line({ component })
 			end
 		end
 	else
-		open = ui.Span(Yatline.config.part_separator.open)
-		close = ui.Span(Yatline.config.part_separator.close)
+		open = ui_Span(Yatline.config.part_separator.open)
+		close = ui_Span(Yatline.config.part_separator.close)
 	end
 
 	apply_style_table(open, separator_style)
 	apply_style_table(close, separator_style)
 
 	if in_side == Side.LEFT then
-		return ui.Line({ component, close })
+		return ui_Line({ component, close })
 	else
-		return ui.Line({ open, component })
+		return ui_Line({ open, component })
 	end
 end
 
@@ -361,22 +239,15 @@ end
 -- Helper Functions --
 --==================--
 
---- Gets the file extension from given file name or returns fallback text if missing.
---- @param file_name string The name of a file whose extension will be taken.
---- @return string file_extension Extension of a file or fallback text.
 local function get_file_extension(file_name)
 	if not file_name then return "---" end
 	local extension = file_name:match("^.+%.(.+)$")
-
 	if extension == nil or extension == "" then
 		return "---"
 	end
 	return extension
 end
 
---- Reverse the order of given array
---- @param array Line Array which wants to be reversed.
---- @return table reversed Reversed ordered given array.
 local function reverse_order(array)
 	local n = #array
 	local reversed = table.new and table.new(n, 0) or {}
@@ -386,23 +257,18 @@ local function reverse_order(array)
 	return reversed
 end
 
---- the number of characters in a UTF-8 string
---- @param s string The string to process.
---- @return integer The number of characters in the string.
-local function utf8len(s)
+local function utf8len_fast(s)
 	if not s then return 0 end
 	local len = #s
 	if len == 0 then return 0 end
 
-	-- Используем встроенный utf8 Lua, если доступен
-	if utf8 and utf8.len then
-		return utf8.len(s) or len
+	if utf8_len then
+		return utf8_len(s) or len
 	end
 
-	-- Fallback без вызова s:gsub()
 	local count = 0
 	for i = 1, len do
-		local b = string.byte(s, i)
+		local b = string_byte(s, i)
 		if b < 128 or b >= 192 then
 			count = count + 1
 		end
@@ -410,119 +276,60 @@ local function utf8len(s)
 	return count
 end
 
---- like string.sub() but i, j are utf8 strings
---- a utf8-safe string.sub()
---- @param s string The string to process.
---- @param i integer The start position.
---- @param j integer The end position.
---- @return string The substring.
-local function utf8sub(s, i, j)
-	-- pattern for matching UTF-8 characters
-	local pattern = "[%z\1-\127\194-\244][\128-\191]*"
+local function utf8sub_fast(s, i, j)
+	if not s or s == "" then return "" end
+	local l = utf8len_fast(s)
 
-	-- helper function for position calculation
-	--- @param pos integer The position of the character.
-	--- @param len integer The length of the string.
-	--- @return integer The relative position of the character.
-	local function posrelat(pos, len)
-		if pos < 0 then
-			pos = len + pos + 1
+	if i < 0 then i = l + i + 1 end
+	if j and j < 0 then j = l + j + 1 end
+	i = math_max(1, i)
+	j = math_min(l, j or l)
+
+	if i > j then return "" end
+
+	local byte_start, byte_end
+	local char_idx = 0
+	local s_len = #s
+	local p = 1
+
+	while p <= s_len do
+		char_idx = char_idx + 1
+		if char_idx == i then
+			byte_start = p
 		end
-		return pos
-	end
-
-	-- helper function to iterate over UTF-8 chars
-	local function chars(_s, no_subs)
-		local function map(f)
-			local _i = 0
-			if no_subs then
-				for b, e in _s:gmatch("()" .. pattern .. "()") do
-					_i = _i + 1
-					local c = e - b
-					f(_i, c, b)
-				end
-			else
-				for b, c in _s:gmatch("()(" .. pattern .. ")") do
-					_i = _i + 1
-					f(_i, c, b)
-				end
-			end
+		local b = string_byte(s, p)
+		if b < 128 then
+			p = p + 1
+		elseif b < 224 then
+			p = p + 2
+		elseif b < 240 then
+			p = p + 3
+		else
+			p = p + 4
 		end
-		return coroutine.wrap(function()
-			return map(coroutine.yield)
-		end)
+		if char_idx == j then
+			byte_end = p - 1
+			break
+		end
 	end
 
-	local l = utf8len(s)
-
-	i = posrelat(i, l)
-	j = j and posrelat(j, l) or l
-
-	if i < 1 then
-		i = 1
-	end
-	if j > l then
-		j = l
-	end
-
-	if i > j then
-		return ""
-	end
-
-	local diff = j - i
-	local iter = chars(s, true)
-
-	-- advance up to i
-	for _ = 1, i - 1 do
-		iter()
-	end
-
-	local c, b = select(2, iter())
-
-	-- becareful with the edge case of empty string
-	if not b then
-		return ""
-	end
-
-	-- i and j are the same, single-character sub
-	if diff == 0 then
-		return string.sub(s, b, b + c - 1)
-	end
-
-	i = b
-
-	-- advance up to j
-	for _ = 1, diff - 1 do
-		iter()
-	end
-
-	c, b = select(2, iter())
-
-	return string.sub(s, i, b + c - 1)
+	if not byte_start then return "" end
+	if not byte_end then byte_end = s_len end
+	return string_sub(s, byte_start, byte_end)
 end
 
---- Trims the filename if it is longer than the max_length.
---- @param filename string The name of a file which will be trimmed.
---- @param max_length integer Maximum length of the filename.
---- @param trim_length integer Length of the trimmed filename.
---- @return string trimmed_filename Trimmed filename.
 local function trim_filename(filename, max_length, trim_length)
 	if not max_length or not trim_length then
 		return filename
 	end
 
-	-- Count UTF-8 characters
-	local len = utf8len(filename)
+	local len = utf8len_fast(filename)
 
-	if len <= max_length then
+	if len <= max_length or len <= trim_length * 2 then
 		return filename
 	end
 
-	if len <= trim_length * 2 then
-		return filename
-	end
-
-	return utf8sub(filename, 1, trim_length) .. "..." .. utf8sub(filename, len - trim_length + 1, len)
+	return utf8sub_fast(filename, 1, trim_length) .. "..." .. utf8sub_fast(filename, len - trim_length + 1, len)
 end
 
 --========================--
@@ -533,26 +340,14 @@ Yatline.string = {}
 Yatline.string.get = {}
 Yatline.string.has_separator = true
 
---- Creates a component from given string according to other parameters.
---- @param string string The text which will be shown inside of the component.
---- @param component_type ComponentType Which section component will be in [ a | b | c ].
---- @return Line line Customized Line which follows desired style of the parameters.
---- @see set_mode_style To know how mode style selected.
---- @see set_component_style To know how component style applied.
-function Yatline.string.create(string, component_type)
-	local span = ui.Span(string)
+function Yatline.string.create(str, component_type)
+	local span = ui_Span(str)
 	set_mode_style(cx.active.mode)
 	set_component_style(span, component_type)
 
-	return ui.Line({ span })
+	return ui_Line({ span })
 end
 
---- Gets the hovered file's name of the current active tab.
---- @param trimmed? boolean Whether to trim the filename if it's too long (default: false)
---- @param max_length? integer Maximum length of the filename (default: 24)
---- @param trim_length? integer Length of each end when trimming (default: 10)
---- @param show_symlink? boolean Whether to show symlink target (default: false)
---- @return string name Current active tab's hovered file's name
 function Yatline.string.get:hovered_name(trimmed, max_length, trim_length, show_symlink)
 	trimmed = trimmed or false
 	max_length = max_length or 24
@@ -571,7 +366,7 @@ function Yatline.string.get:hovered_name(trimmed, max_length, trim_length, show_
 		local trimmed_name = trim_filename(hovered.name, max_length, trim_length)
 		local trimmed_linked = #linked ~= 0
 				and link_delimiter .. trim_filename(
-					string.sub(linked, #link_delimiter + 1, -1),
+					string_sub(linked, #link_delimiter + 1, -1),
 					max_length,
 					trim_length
 				)
@@ -582,11 +377,6 @@ function Yatline.string.get:hovered_name(trimmed, max_length, trim_length, show_
 	end
 end
 
---- Gets the hovered file's path of the current active tab.
---- @param trimmed? boolean Whether to trim the file path if it's too long (default: false)
---- @param max_length? integer Maximum length of the file path (default: 24)
---- @param trim_length? integer Length of each end when trimming (default: 10)
---- @return string path Current active tab's hovered file's path.
 function Yatline.string.get:hovered_path(trimmed, max_length, trim_length)
 	trimmed = trimmed or false
 	max_length = max_length or 24
@@ -604,8 +394,6 @@ function Yatline.string.get:hovered_path(trimmed, max_length, trim_length)
 	end
 end
 
---- Gets the hovered file's size of the current active tab.
---- @return string size Current active tab's hovered file's size.
 function Yatline.string.get:hovered_size()
 	local hovered = cx.active.current.hovered
 	if hovered then
@@ -615,8 +403,6 @@ function Yatline.string.get:hovered_size()
 	end
 end
 
---- Gets the hovered file's path of the current active tab.
---- @return string mime Current active tab's hovered file's mime.
 function Yatline.string.get:hovered_mime()
 	local hovered = cx.active.current.hovered
 	if hovered then
@@ -626,9 +412,6 @@ function Yatline.string.get:hovered_mime()
 	end
 end
 
---- Gets the hovered file's user and group ownership of the current active tab.
---- Unix-like systems only.
---- @return string ownership Current active tab's hovered file's user and group ownership.
 function Yatline.string.get:hovered_ownership()
 	local hovered = cx.active.current.hovered
 
@@ -646,9 +429,6 @@ function Yatline.string.get:hovered_ownership()
 	end
 end
 
---- Gets the hovered file's extension of the current active tab.
---- @param show_icon boolean Whether or not an icon will be shown.
---- @return string file_extension Current active tab's hovered file's extension.
 function Yatline.string.get:hovered_file_extension(show_icon)
 	local hovered = cx.active.current.hovered
 	if not hovered then
@@ -671,11 +451,6 @@ function Yatline.string.get:hovered_file_extension(show_icon)
 	end
 end
 
---- Gets the path of the current active tab.
---- @param trimmed? boolean Whether to trim the current active tab's path if it's too long (default: false)
---- @param max_length? integer Maximum length of the current active tab's path (default: 24)
---- @param trim_length? integer Length of each end when trimming (default: 10)
---- @return string path Current active tab's path.
 function Yatline.string.get:tab_path(trimmed, max_length, trim_length)
 	trimmed = trimmed or false
 	max_length = max_length or 24
@@ -687,13 +462,13 @@ function Yatline.string.get:tab_path(trimmed, max_length, trim_length)
 
 	local t = {}
 	if cwd.spec.is_search then
-		t[#t + 1] = string.format("search: %s", cwd.domain)
+		t[#t + 1] = string_format("search: %s", cwd.domain)
 	end
 	if filter then
-		t[#t + 1] = string.format("filter: %s", filter)
+		t[#t + 1] = string_format("filter: %s", filter)
 	end
 	if finder then
-		t[#t + 1] = string.format("find: %s", finder)
+		t[#t + 1] = string_format("find: %s", finder)
 	end
 
 	local suffix
@@ -710,89 +485,68 @@ function Yatline.string.get:tab_path(trimmed, max_length, trim_length)
 	end
 end
 
---- Gets the filtered query.
---- @param key? string Key value that indicates filtered query (default: "filter:")
---- @return string query Filtered query.
 function Yatline.string.get:filter_query(key)
 	key = key or "filter:"
-
 	local filter = cx.active.current.files.filter
 
 	if filter then
-		return string.format("%s %s", key, tostring(filter))
+		return string_format("%s %s", key, tostring(filter))
 	else
 		return ""
 	end
 end
 
---- Gets the searched query.
---- @param key? string Key value that indicates searched query (default: "search:")
---- @return string query Searched query.
 function Yatline.string.get:search_query(key)
 	key = key or "search:"
-
 	local cwd = cx.active.current.cwd
 
 	if cwd.spec.is_search then
-		return string.format("%s %s", key, cwd.domain)
+		return string_format("%s %s", key, cwd.domain)
 	else
 		return ""
 	end
 end
 
---- Gets the finded query.
---- @param key? string Key value that indicates finded query (default: "find:")
---- @return string query Finded query.
 function Yatline.string.get:finder_query(key)
 	key = key or "find:"
-
 	local finder = cx.active.finder
 
 	if finder then
-		return string.format("%s %s", key, tostring(finder))
+		return string_format("%s %s", key, tostring(finder))
 	else
 		return ""
 	end
 end
 
---- Gets the mode of active tab.
---- @return string mode Active tab's mode.
 function Yatline.string.get:tab_mode()
 	local mode = tostring(cx.active.mode):upper()
 	if mode == "UNSET" then
 		mode = "UN-SET"
 	end
-
 	return mode
 end
 
---- Gets the number of files in the current active tab.
---- @return string num_files Number of files in the current active tab.
 function Yatline.string.get:tab_num_files()
 	return tostring(#cx.active.current.files)
 end
 
---- Gets the cursor position in the current active tab.
---- @return string cursor_position Current active tab's cursor position.
 function Yatline.string.get:cursor_position()
 	local cursor = cx.active.current.cursor
 	local length = #cx.active.current.files
 
 	if length ~= 0 then
-		return string.format("%d/%d", cursor + 1, length)
+		return string_format("%d/%d", cursor + 1, length)
 	else
 		return "0"
 	end
 end
 
---- Gets the cursor position as percentage which is according to the number of files inside of current active tab.
---- @return string percentage Percentage of current active tab's cursor position and number of percentages.
 function Yatline.string.get:cursor_percentage()
 	local percentage = 0
 	local cursor = cx.active.current.cursor
 	local length = #cx.active.current.files
 	if cursor ~= 0 and length ~= 0 then
-		percentage = math.floor((cursor + 1) * 100 / length)
+		percentage = math_floor((cursor + 1) * 100 / length)
 	end
 
 	if percentage == 0 then
@@ -800,14 +554,10 @@ function Yatline.string.get:cursor_percentage()
 	elseif percentage == 100 then
 		return "Bot"
 	else
-		return string.format("%d%%", percentage)
+		return string_format("%d%%", percentage)
 	end
 end
 
---- Gets the local date or time values.
---- @param format string Format for giving desired date or time values.
---- @return string date Date or time values.
---- @see os.date To see how format works.
 function Yatline.string.get:date(format)
 	return tostring(os.date(format))
 end
@@ -820,33 +570,17 @@ Yatline.line = {}
 Yatline.line.get = {}
 Yatline.line.has_separator = false
 
---- To follow component group naming and functions, returns the given line without any changes.
---- @param line Line The line already pre-defined.
---- @param component_type ComponentType Which section component will be in [ a | b | c ]. Will not be used.
---- @return Line line The given line as an input.
 function Yatline.line.create(line, component_type)
 	return line
 end
 
---- Creates and returns line component for tabs.
---- @param side? string Left or right side of the either header-line or status-line.
---- @return Line line Customized Line which contains tabs.
---- @see set_mode_style To know how mode style selected.
---- @see set_component_style To know how component style applied.
---- @see connect_padding To know how components have paddings.
---- @see connect_separator To know how component and separator connected.
 function Yatline.line.get:tabs(side)
 	side = side or "left"
 
 	local tabs = #cx.tabs
 	local lines = {}
 
-	local in_side
-	if side == "left" then
-		in_side = Side.LEFT
-	else
-		in_side = Side.RIGHT
-	end
+	local in_side = (side == "left") and Side.LEFT or Side.RIGHT
 
 	for i = 1, tabs do
 		local text = tostring(i)
@@ -873,9 +607,9 @@ function Yatline.line.get:tabs(side)
 				lines[#lines + 1] = connect_separator(tab, in_side, SeparatorType.INNER, separator_style)
 			end
 		else
-			local tab = ui.Span(text)
-			local inner = ui.Span(string.rep(" ", Yatline.config.padding.inner))
-			local outer = ui.Span(string.rep(" ", Yatline.config.padding.outer))
+			local tab = ui_Span(text)
+			local inner = ui_Span(string_rep(" ", Yatline.config.padding.inner))
+			local outer = ui_Span(string_rep(" ", Yatline.config.padding.outer))
 
 			if Yatline.config.show_background then
 				set_component_style(inner, ComponentType.C)
@@ -886,9 +620,9 @@ function Yatline.line.get:tabs(side)
 			end
 
 			if in_side == Side.LEFT then
-				tab = ui.Line({ outer, tab, inner })
+				tab = ui_Line({ outer, tab, inner })
 			else
-				tab = ui.Line({ inner, tab, outer })
+				tab = ui_Line({ inner, tab, outer })
 			end
 
 			if i == cx.tabs.idx - 1 then
@@ -908,31 +642,31 @@ function Yatline.line.get:tabs(side)
 							separator_style.bg = Yatline.config.style_c.bg
 						end
 
-						open = ui.Span(Yatline.config.inverse_separator.open)
-						close = ui.Span(Yatline.config.inverse_separator.close)
+						open = ui_Span(Yatline.config.inverse_separator.open)
+						close = ui_Span(Yatline.config.inverse_separator.close)
 					else
 						separator_style.bg = Yatline.config.style_a.bg
 						if Yatline.config.show_background then
 							separator_style.fg = Yatline.config.style_c.bg
 						end
 
-						open = ui.Span(Yatline.config.section_separator.open)
-						close = ui.Span(Yatline.config.section_separator.close)
+						open = ui_Span(Yatline.config.section_separator.open)
+						close = ui_Span(Yatline.config.section_separator.close)
 					end
 				else
 					separator_style.fg = Yatline.config.style_c.fg
 
-					open = ui.Span(Yatline.config.part_separator.open)
-					close = ui.Span(Yatline.config.part_separator.close)
+					open = ui_Span(Yatline.config.part_separator.open)
+					close = ui_Span(Yatline.config.part_separator.close)
 				end
 
 				apply_style_table(open, separator_style)
 				apply_style_table(close, separator_style)
 
 				if in_side == Side.LEFT then
-					lines[#lines + 1] = ui.Line({ tab, close })
+					lines[#lines + 1] = ui_Line({ tab, close })
 				else
-					lines[#lines + 1] = ui.Line({ open, tab })
+					lines[#lines + 1] = ui_Line({ open, tab })
 				end
 			else
 				separator_style.fg = Yatline.config.style_c.fg
@@ -946,9 +680,9 @@ function Yatline.line.get:tabs(side)
 	end
 
 	if in_side == Side.RIGHT then
-		return ui.Line(reverse_order(lines))
+		return ui_Line(reverse_order(lines))
 	else
-		return ui.Line(lines)
+		return ui_Line(lines)
 	end
 end
 
@@ -960,31 +694,22 @@ Yatline.coloreds = {}
 Yatline.coloreds.get = {}
 Yatline.coloreds.has_separator = true
 
---- Creates a component from given Coloreds according to other parameters.
---- The component it created, can contain multiple strings with different foreground color.
---- @param coloreds Coloreds The array which contains an array which contains text which will be shown inside of the component and its foreground color.
---- @param component_type ComponentType Which section component will be in [ a | b | c ].
---- @return Line line Customized Line which follows desired style of the parameters.
---- @see set_mode_style To know how mode style selected.
---- @see set_component_style To know how component style applied.
 function Yatline.coloreds.create(coloreds, component_type)
 	set_mode_style(cx.active.mode)
 
 	local spans = {}
-	for i, colored in ipairs(coloreds) do
-		local span = ui.Span(colored[1])
+	for i = 1, #coloreds do
+		local colored = coloreds[i]
+		local span = ui_Span(colored[1])
 		set_component_style(span, component_type)
 		span:fg(colored[2])
 
 		spans[i] = span
 	end
 
-	return ui.Line(spans)
+	return ui_Line(spans)
 end
 
---- Gets the hovered file's permissions of the current active tab.
---- Unix-like systems only.
---- @return Coloreds? coloreds Current active tab's hovered file's permissions
 local PERM_COLORS = nil
 
 local function get_perm_color(char)
@@ -1002,6 +727,7 @@ local function get_perm_color(char)
 	end
 	return PERM_COLORS[char] or Yatline.config.permissions_t_fg
 end
+
 function Yatline.coloreds.get:permissions()
 	local hovered = cx.active.current.hovered
 	if not hovered then return nil end
@@ -1011,16 +737,13 @@ function Yatline.coloreds.get:permissions()
 
 	local coloreds = {}
 	for i = 1, #perm do
-		local c = string.sub(perm, i, i)
+		local c = string_sub(perm, i, i)
 		coloreds[i] = { c, get_perm_color(c) }
 	end
 
 	return coloreds
 end
---- Gets the number of selected and yanked files and also number of files or filtered files of the active tab.
---- @param filter? boolean Whether or not number of files (or filtered files) will be shown.
---- @param zero_check? boolean Whether or not counts will be shown if count is zero.
---- @return Coloreds? coloreds Active tab's number of selected and yanked files and also number of files or filtered files
+
 function Yatline.coloreds.get:count(filter, zero_check)
 	filter = filter or false
 	zero_check = zero_check or false
@@ -1042,19 +765,16 @@ function Yatline.coloreds.get:count(filter, zero_check)
 		end
 
 		if (zero_check and num_files > 0) or not zero_check then
-			table.insert(coloreds, { string.format("%s %d", files_count_icon, num_files), files_count_fg })
+			coloreds[#coloreds + 1] = { string_format("%s %d", files_count_icon, num_files), files_count_fg }
 		end
 	end
 
 	if (zero_check and num_selected > 0) or not zero_check then
 		if #coloreds > 0 then
-			table.insert(coloreds, { " ", Yatline.config.selected.fg })
+			coloreds[#coloreds + 1] = { " ", Yatline.config.selected.fg }
 		end
 
-		table.insert(
-			coloreds,
-			{ string.format("%s %d", Yatline.config.selected.icon, num_selected), Yatline.config.selected.fg }
-		)
+		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.selected.icon, num_selected), Yatline.config.selected.fg }
 	end
 
 	if (zero_check and num_yanked > 0) or not zero_check then
@@ -1068,10 +788,10 @@ function Yatline.coloreds.get:count(filter, zero_check)
 		end
 
 		if #coloreds > 0 then
-			table.insert(coloreds, { " ", yanked_fg })
+			coloreds[#coloreds + 1] = { " ", yanked_fg }
 		end
 
-		table.insert(coloreds, { string.format("%s %d", yanked_icon, num_yanked), yanked_fg })
+		coloreds[#coloreds + 1] = { string_format("%s %d", yanked_icon, num_yanked), yanked_fg }
 	end
 
 	if #coloreds > 0 then
@@ -1081,9 +801,6 @@ function Yatline.coloreds.get:count(filter, zero_check)
 	end
 end
 
---- Gets the number of task states.
---- @param zero_check? boolean Whether or not counts will be shown if count is zero.
---- @return Coloreds? coloreds Number of task states.
 function Yatline.coloreds.get:task_states(zero_check)
 	zero_check = zero_check or false
 
@@ -1091,32 +808,23 @@ function Yatline.coloreds.get:task_states(zero_check)
 	local coloreds = {}
 
 	if (zero_check and summary.total > 0) or not zero_check then
-		table.insert(
-			coloreds,
-			{ string.format("%s %d", Yatline.config.total.icon, summary.total), Yatline.config.total.fg }
-		)
+		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.total.icon, summary.total), Yatline.config.total.fg }
 	end
 
 	if (zero_check and summary.success > 0) or not zero_check then
 		if #coloreds > 0 then
-			table.insert(coloreds, { " ", Yatline.config.success.fg })
+			coloreds[#coloreds + 1] = { " ", Yatline.config.success.fg }
 		end
 
-		table.insert(
-			coloreds,
-			{ string.format("%s %d", Yatline.config.success.icon, summary.success), Yatline.config.success.fg }
-		)
+		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.success.icon, summary.success), Yatline.config.success.fg }
 	end
 
 	if (zero_check and summary.failed > 0) or not zero_check then
 		if #coloreds > 0 then
-			table.insert(coloreds, { " ", Yatline.config.failed.fg })
+			coloreds[#coloreds + 1] = { " ", Yatline.config.failed.fg }
 		end
 
-		table.insert(
-			coloreds,
-			{ string.format("%s %d", Yatline.config.failed.icon, summary.failed), Yatline.config.failed.fg }
-		)
+		coloreds[#coloreds + 1] = { string_format("%s %d", Yatline.config.failed.icon, summary.failed), Yatline.config.failed.fg }
 	end
 
 	if #coloreds > 0 then
@@ -1126,18 +834,13 @@ function Yatline.coloreds.get:task_states(zero_check)
 	end
 end
 
---- Gets colored which contains string based component's string and desired foreground color.
---- @param component_name string String based component's name.
---- @param fg Color Desired foreground color.
---- @param params? table Array of parameters of string based component. It is optional.
---- @return Coloreds? coloreds Array of solely array of string based component's string and desired foreground color.
 function Yatline.coloreds.get:string_based_component(component_name, fg, params)
 	local getter = Yatline.string.get[component_name]
 
 	if getter then
 		local output
 		if params then
-			output = getter(Yatline.string.get, table.unpack(params))
+			output = getter(Yatline.string.get, table_unpack(params))
 		else
 			output = getter()
 		end
@@ -1154,16 +857,6 @@ end
 -- Configuration --
 --===============--
 
---- Configure separators if it is need to be added to the components.
---- Connects them with each component.
---- @param section_components [Line, boolean][] Array of components in one of the sections.
---- @param component_type ComponentType Which section component will be in [ a | b | c ].
---- @param in_side Side Left or right side of the either header-line or status-line.
---- @param num_section_b_components integer Number of components in section-b.
---- @param num_section_c_components integer Number of components in section-c.
---- @return table section_line_components Array of line components whether or not connected with separators.
---- @see connect_padding To know how components have paddings.
---- @see connect_separator To know how component and separator connected.
 local function config_components_separators(
 	section_components,
 	component_type,
@@ -1173,12 +866,13 @@ local function config_components_separators(
 )
 	local num_section_components = #section_components
 	local section_line_components = {}
-	for i, component in ipairs(section_components) do
-		if component[2] == true then -- Does component have separator?
+	for i = 1, num_section_components do
+		local component = section_components[i]
+		if component[2] == true then
 			local separator_style = { bg = nil, fg = nil }
 
 			local separator_type
-			if i ~= num_section_components then -- Does component is not at the end of the section?
+			if i ~= num_section_components then
 				separator_type = SeparatorType.INNER
 
 				if component_type == ComponentType.A then
@@ -1188,7 +882,7 @@ local function config_components_separators(
 				else
 					separator_style = Yatline.config.style_c
 				end
-			else -- Does component is at the end of the section?
+			else
 				separator_type = SeparatorType.OUTER
 
 				if component_type == ComponentType.A then
@@ -1220,36 +914,32 @@ local function config_components_separators(
 	return section_line_components
 end
 
---- Creates configured section according to its components' config.
---- @param section ComponentConfig[] Array of components' config in a section.
---- @param component_type ComponentType Which section that components will be.
---- @return [Line, boolean][] section_components Configured components array whose components are in section.
 local function config_section(section, component_type)
-	--- @type [Line, boolean][]
 	local section_components = {}
 
-	for _, component in ipairs(section) do
+	for i = 1, #section do
+		local component = section[i]
 		local component_group = Yatline[component.type]
 
-		if component_group then -- Does component group exist?
-			if component.custom then -- Does component is custom?
-				if component.name ~= nil and component.name ~= "" and #component.name ~= 0 then -- Does component name is valid?
-					section_components[#section_components + 1] = -- Insert component to the table.
+		if component_group then
+			if component.custom then
+				if component.name ~= nil and component.name ~= "" and #component.name ~= 0 then
+					section_components[#section_components + 1] =
 						{ component_group.create(component.name, component_type), component_group.has_separator }
 				end
 			else
-				local getter = component_group.get[component.name] -- Get component function that will be called.
+				local getter = component_group.get[component.name]
 
-				if getter then -- Does function exist?
-					local output -- Output of the function.
-					if component.params then -- Does component function has parameters?
-						output = getter(component_group.get, table.unpack(component.params))
+				if getter then
+					local output
+					if component.params then
+						output = getter(component_group.get, table_unpack(component.params))
 					else
 						output = getter()
 					end
 
-					if output ~= nil and output ~= "" then -- Does component is not empty?
-						section_components[#section_components + 1] = -- Insert component to the table.
+					if output ~= nil and output ~= "" then
+						section_components[#section_components + 1] =
 							{ component_group.create(output, component_type), component_group.has_separator }
 					end
 				end
@@ -1260,15 +950,7 @@ local function config_section(section, component_type)
 	return section_components
 end
 
---- Automatically creates and configures either header-line or status-line.
---- @param side SideConfig Configuration of either left or right side.
---- @param in_side Side Which side components will be.
---- @return Line left_line Consist of components that are in left side of the line.
---- @return Line right_line Consist of components that are in right side of the line.
---- @see config_section To know how components are gotten from sections' config.
---- @see config_components_separators To know how components are connected with separators.
 local function config_line(side, in_side)
-	-- Configures components of sections.
 	local section_a_components = config_section(side.section_a, ComponentType.A)
 	local section_b_components = config_section(side.section_b, ComponentType.B)
 	local section_c_components = config_section(side.section_c, ComponentType.C)
@@ -1276,7 +958,6 @@ local function config_line(side, in_side)
 	local num_section_b_components = #section_b_components
 	local num_section_c_components = #section_c_components
 
-	-- Connects components of section by separators.
 	local section_a_line_components = config_components_separators(
 		section_a_components,
 		ComponentType.A,
@@ -1299,27 +980,23 @@ local function config_line(side, in_side)
 		num_section_c_components
 	)
 
-	if in_side == Side.RIGHT then -- Reverse the order of the components if it is in the right side.
+	if in_side == Side.RIGHT then
 		section_a_line_components = reverse_order(section_a_line_components)
 		section_b_line_components = reverse_order(section_b_line_components)
 		section_c_line_components = reverse_order(section_c_line_components)
 	end
 
-	-- Combines components of section into single components.
-	local section_a_line = ui.Line(section_a_line_components)
-	local section_b_line = ui.Line(section_b_line_components)
-	local section_c_line = ui.Line(section_c_line_components)
+	local section_a_line = ui_Line(section_a_line_components)
+	local section_b_line = ui_Line(section_b_line_components)
+	local section_c_line = ui_Line(section_c_line_components)
 
 	if in_side == Side.LEFT then
-		return ui.Line({ section_a_line, section_b_line, section_c_line })
+		return ui_Line({ section_a_line, section_b_line, section_c_line })
 	else
-		return ui.Line({ section_c_line, section_b_line, section_a_line })
+		return ui_Line({ section_c_line, section_b_line, section_a_line })
 	end
 end
 
---- Checks if either header-line or status-line contains components.
---- @param line LineConfig Configuration of either header-line or status-line.
---- @return boolean show_line Returns yes if it contains components, otherwise returns no.
 local function show_line(line)
 	for _, side in pairs(line) do
 		for _, section in pairs(side) do
@@ -1332,13 +1009,8 @@ local function show_line(line)
 	return false
 end
 
---- Creates and configures paragraph which is used as left or right of either
---- header-line or status-line.
---- @param area Rect The area where paragraph will be placed in.
---- @param line? Line The line which used in paragraph. It is optional.
---- @return Paragraph paragraph Configured parapgraph.
 local function config_paragraph(area, line)
-	local txt = ui.Text({ line }):area(area)
+	local txt = ui_Text({ line }):area(area)
 	if Yatline.config.show_background then
 		return apply_style_table(txt, Yatline.config.style_c)
 	end
@@ -1348,7 +1020,6 @@ end
 return {
 	setup = function(_, config, pre_theme)
 		if config then
-			-- Fills the sections that are not given if the line exists.
 			for _, line in ipairs({ "header_line", "status_line" }) do
 				if config[line] then
 					for _, side in ipairs({ "left", "right" }) do
@@ -1366,12 +1037,10 @@ return {
 				end
 			end
 
-			-- Get the current theme according to the light/dark mode. (default: config.theme)
 			config.theme = (not rt.term.light and config.theme_dark)
 				or (rt.term.light and config.theme_light)
 				or config.theme
 
-			-- Extracts theme fields to the config unless that fields does not exists.
 			if config.theme then
 				for key, value in pairs(config.theme) do
 					if not config[key] then
@@ -1380,7 +1049,6 @@ return {
 				end
 			end
 
-			-- Extracts config fields to the YatlineConfig if that fields exists.
 			for key, value in pairs(config) do
 				if Yatline.config[key] then
 					Yatline.config[key] = value
@@ -1388,7 +1056,6 @@ return {
 			end
 		end
 
-		-- Extracts pre_theme fields to the YatlineConfig if that fields exists.
 		if pre_theme then
 			for key, value in pairs(pre_theme) do
 				if Yatline.config[key] then
@@ -1397,25 +1064,22 @@ return {
 			end
 		end
 
-		if Yatline.config.display_header_line then -- Controls displaying header-line.
-			if show_line(Yatline.config.header_line) then -- Controls recoding of header-line.
-				-- Empties default Yazi header-line.
+		if Yatline.config.display_header_line then
+			if show_line(Yatline.config.header_line) then
 				Header._left = {}
 				Header._right = {}
 
 				Header.redraw = function(self)
-					-- Gets Yazi components.
 					local right = self:children_redraw(self.RIGHT)
 					self._right_width = right:width()
 					local left = self:children_redraw(self.LEFT)
 
-					-- Gets Yatline components.
 					local left_line = config_line(Yatline.config.header_line.left, Side.LEFT)
 					local right_line = config_line(Yatline.config.header_line.right, Side.RIGHT)
 
 					return {
-						config_paragraph(self._area, ui.Line({ left_line, left })), -- Styles left_line if show_background set.
-						ui.Line({ right, right_line }):area(self._area):align(ui.Align.RIGHT),
+						config_paragraph(self._area, ui_Line({ left_line, left })),
+						ui_Line({ right, right_line }):area(self._area):align(ui.Align.RIGHT),
 					}
 				end
 			end
@@ -1425,26 +1089,23 @@ return {
 			end
 		end
 
-		if Yatline.config.display_status_line then -- Controls displaying status-line.
-			if show_line(Yatline.config.status_line) then -- Controls recoding of status-line.
-				-- Empties default Yazi status-line.
+		if Yatline.config.display_status_line then
+			if show_line(Yatline.config.status_line) then
 				Status._left = {}
 				Status._right = {}
 
 				Status.redraw = function(self)
-					-- Gets Yazi components.
 					local left = self:children_redraw(self.LEFT)
 					local right = self:children_redraw(self.RIGHT)
 
-					-- Gets Yatline components.
 					local left_line = config_line(Yatline.config.status_line.left, Side.LEFT)
 					local right_line = config_line(Yatline.config.status_line.right, Side.RIGHT)
 
-					local sum_right = ui.Line({ right, right_line }) -- Needed for error prevention.
+					local sum_right = ui_Line({ right, right_line })
 					return {
-						config_paragraph(self._area, ui.Line({ left_line, left })), -- Styles left_line if show_background set.
+						config_paragraph(self._area, ui_Line({ left_line, left })),
 						sum_right:area(self._area):align(ui.Align.RIGHT),
-						table.unpack(ui.redraw(Progress:new(self._area, sum_right:width()))), -- Inserts Progress bar.
+						table_unpack(ui.redraw(Progress:new(self._area, sum_right:width()))),
 					}
 				end
 			end
@@ -1456,39 +1117,37 @@ return {
 
 		Root.layout = function(self)
 			local constraints = {}
-			-- Sets Yazi layout according to the given positions.
 			for _, component in ipairs(Yatline.config.component_positions) do
 				if
 					(component == "header" and Yatline.config.display_header_line)
 					or (component == "status" and Yatline.config.display_status_line)
 				then
-					table.insert(constraints, ui.Constraint.Length(1))
+					table_insert(constraints, ui_Constraint.Length(1))
 				elseif component == "tab" then
-					table.insert(constraints, ui.Constraint.Fill(1))
+					table_insert(constraints, ui_Constraint.Fill(1))
 				end
 			end
 
-			self._chunks = ui.Layout():direction(ui.Layout.VERTICAL):constraints(constraints):split(self._area)
+			self._chunks = ui_Layout():direction(ui_Layout.VERTICAL):constraints(constraints):split(self._area)
 		end
 
 		Root.build = function(self)
 			local childrens = {}
-			-- Fills the layout according to the given positions.
 			local i = 1
 			for _, component in ipairs(Yatline.config.component_positions) do
 				if component == "header" and Yatline.config.display_header_line then
-					table.insert(childrens, Header:new(self._chunks[i], cx.active))
+					table_insert(childrens, Header:new(self._chunks[i], cx.active))
 					i = i + 1
 				elseif component == "tab" then
-					table.insert(childrens, Tab:new(self._chunks[i], cx.active))
+					table_insert(childrens, Tab:new(self._chunks[i], cx.active))
 					i = i + 1
 				elseif component == "status" and Yatline.config.display_status_line then
-					table.insert(childrens, Status:new(self._chunks[i], cx.active))
+					table_insert(childrens, Status:new(self._chunks[i], cx.active))
 					i = i + 1
 				end
 			end
 
-			table.insert(childrens, Modal:new(self._area))
+			table_insert(childrens, Modal:new(self._area))
 
 			self._children = childrens
 		end
