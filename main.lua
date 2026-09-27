@@ -378,11 +378,11 @@ end
 --- @param array Line Array which wants to be reversed.
 --- @return table reversed Reversed ordered given array.
 local function reverse_order(array)
-	local reversed = {}
-	for i = #array, 1, -1 do
-		table.insert(reversed, array[i])
+	local n = #array
+	local reversed = table.new and table.new(n, 0) or {}
+	for i = 1, n do
+		reversed[i] = array[n - i + 1]
 	end
-
 	return reversed
 end
 
@@ -1322,12 +1322,11 @@ end
 --- @param line? Line The line which used in paragraph. It is optional.
 --- @return Paragraph paragraph Configured parapgraph.
 local function config_paragraph(area, line)
-	local line_array = { line } or {}
+	local txt = ui.Text({ line }):area(area)
 	if Yatline.config.show_background then
-		return apply_style_table(ui.Text(line_array):area(area), Yatline.config.style_c)
-	else
-		return ui.Text(line_array):area(area)
+		return apply_style_table(txt, Yatline.config.style_c)
 	end
+	return txt
 end
 
 return {
